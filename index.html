@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SmartBlock Web — Starter (fix)</title>
+  <link rel="stylesheet" href="./style.css"/>
+  <!-- Blockly v10+ -->
+<script src="https://unpkg.com/blockly@10.4.3/blockly.min.js" defer></script>
+<script src="https://unpkg.com/blockly@10.4.3/blocks.min.js" defer></script>
+<script src="https://unpkg.com/blockly@10.4.3/msg/es.js" defer></script>
+
+<!-- Tus archivos (después de Blockly) -->
+<script src="./blocks.js" defer></script>
+<script src="./generator.js" defer></script>
+<script src="./app.js" defer></script>
+  
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <h1>SmartBlock <span class="tag">web</span></h1>
+      <p class="subtitle">Bloques → C++ → Export .ino · WebSerial (opcional)</p>
+    </div>
+    <div class="actions">
+      <button id="btn-generate">Generar código</button>
+      <button id="btn-download">Descargar .ino</button>
+      <button id="btn-connect">Conectar (WebSerial)</button>
+      <label>Puerto: <span id="port-label">no conectado</span></label>
+      <button id="btn-test-led">Test LED13 (on/off)</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="left">
+      <div id="blocklyDiv"></div>
+    <xml id="toolbox" style="display:none">
+      <category name="Estructura" colour="#D39D2A">
+        <block type="arduino_setup"></block>
+        <block type="arduino_loop"></block>
+      </category>
+      <category name="⚙️ Control" colour="#FFB703">
+        <block type="controls_repeat_ext"></block>
+        <block type="controls_if"></block>
+      </category>
+      <category name="🧠 Lógica" colour="#219EBC">
+        <block type="logic_compare"></block>
+        <block type="logic_boolean"></block>
+        <block type="math_number"></block>
+      </category>
+      <category name="🔌 Actuadores" colour="#FB8500">
+        <block type="digital_write_pin"></block>
+        <block type="delay_ms"></block>
+      </category>
+      <category name="📈 Sensores" colour="#8ECAE6">
+        <block type="analog_read_pin"></block>
+      </category>
+    </xml>
+    </section>
+    <section id="right">
+      <h3>Sketch (.ino)</h3>
+      <pre id="code"></pre>
+      <h3>Consola Serial (opcional)</h3>
+      <div class="serial">
+        <div class="row">
+          <input id="serial-input" placeholder="Comando, ej: W 13 H o R A0"/>
+          <button id="serial-send">Enviar</button>
+        </div>
+        <pre id="serial-log"></pre>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <small>SmartBlock Web Starter · MIT</small>
+  </footer>
+</body>
+</html>
