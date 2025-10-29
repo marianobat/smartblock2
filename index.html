@@ -74,5 +74,44 @@
   <footer>
     <small>SmartBlock Web Starter · MIT</small>
   </footer>
+  <!-- Al final de index.html, justo antes de </body> -->
+<style>
+  .row { display:flex; gap:8px; align-items:center; margin:10px 0; flex-wrap:wrap; }
+  #log { white-space:pre-wrap; background:#f6f8fa; padding:10px; border:1px solid #ddd; border-radius:6px; height:220px; overflow:auto; }
+  .ok { color:#14803a; } .warn { color:#a15c00; } .err { color:#b00020; }
+</style>
+
+<section id="arduino-agent-panel">
+  <h2>Conexión con Arduino Cloud Agent</h2>
+
+  <div class="row">
+    <button id="btnConnect">Conectar Agent</button>
+    <span id="agentStatus" class="warn">Sin conexión</span>
+  </div>
+
+  <div class="row">
+    <button id="btnList">Listar puertos</button>
+    <select id="portSelect"></select>
+    <input id="baud" type="number" value="115200" min="300" step="300" style="width:120px" />
+    <button id="btnOpen">Abrir</button>
+    <button id="btnClose">Cerrar</button>
+    <span id="portStatus" class="warn">Puerto cerrado</span>
+  </div>
+
+  <div class="row">
+    <input id="line" type="text" placeholder="Comando o texto a enviar..." style="min-width:260px" />
+    <button id="btnSend">Enviar</button>
+  </div>
+
+  <h3>Monitor serie</h3>
+  <div id="log"></div>
+</section>
+
+<!-- Cliente Socket.IO desde CDN -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+<!-- Integración Agent -->
+<script src="./agent.js"></script>
+<script src="./serial-ui.js"></script>
 </body>
 </html>
