@@ -18,15 +18,23 @@ window.ArduinoAgent = (function () {
   }
 
   function getPortRange() {
-    const q = new URLSearchParams(location.search);
-    const forced = q.get("agentPort");
-    if (forced) return [Number(forced)];
-    const start = 8985, end = 9010;
-    const out = [];
-    for (let p = start; p <= end; p++) out.push(p);
-    return out;
-  }
+  const q = new URLSearchParams(location.search);
+  const forced = q.get("agentPort");
+  if (forced) return [Number(forced)];
 
+  // Prioriza los puertos que tu /info mostró
+  const preferred = [8991, 8992];
+
+  // Mantén el barrido original como respaldo
+  const start = 8985, end = 9010;
+  const sweep = [];
+  for (let p = start; p <= end; p++) sweep.push(p);
+
+  // Quita duplicados y devuelve
+  const seen = new Set();
+  return [...preferred, ...sweep].filter(p => !seen.has(p) && seen.add(p));
+}
+  
   async function findAgent() {
     const host = getAgentHost();
     const ports = getPortRange();
@@ -98,6 +106,23 @@ window.ArduinoAgent = (function () {
       if (msg?.list != null) emit("ports:list", msg.list);
       emit("agent:message", msg);
     });
+
+    // Algunas builds usan estos canales en lugar de "command"
+socket.on("message", (msg) => {
+  // Intenta propagar lista si viene con otra clave
+  if (msg?.list) emit("ports:list", msg.list);
+  emit("agent:message", msg);
+});
+
+socket.on("notification", (msg) => {
+  if (msg?.list) emit("ports:list", msg.list);
+  emit("agent:message", msg);
+});
+   
+    socket.on("connect", () => {
+  console.log("[AGENT] conectado a", endpoint);
+  emit("agent:connect", { endpoint, version: lastInfo.version });
+});
 
     return lastInfo;
   }
