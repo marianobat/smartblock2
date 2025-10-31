@@ -41,16 +41,26 @@
 
   // Extrae puertos desde distintos formatos de mensaje del Agent
   function extractPortsFromMsg(msg) {
-    if (!msg || typeof msg !== "object") return [];
-    // ✅ Tu Agent 1.7.0 envía "Ports" (P mayúscula)
-    const keys = ["Ports", "list", "ports", "serial", "serialPorts", "devices", "P"];
-    let out = [];
-    for (const k of keys) {
-      const v = msg[k];
-      if (Array.isArray(v)) out = out.concat(v);
-    }
-    return out;
+  // 1) Normaliza: si viene como string, intento parsear a JSON
+  if (typeof msg === "string") {
+    let s = msg.trim();
+    // Desescapa comillas &lt; &gt; por si vienen HTML-encoded
+    s = s.replace(/&#34;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+    try { msg = JSON.parse(s); } catch { /* se queda como string */ }
   }
+
+  // Si sigue sin ser objeto, no hay nada que extraer
+  if (!msg || typeof msg !== "object") return [];
+
+  // 2) Algunas builds devuelven la lista en distintas claves
+  const keys = ["Ports", "list", "ports", "serial", "serialPorts", "devices", "P"];
+  let out = [];
+  for (const k of keys) {
+    const v = msg[k];
+    if (Array.isArray(v)) out = out.concat(v);
+  }
+  return out;
+}
 
   // Rellena el <select> de puertos con tolerancia a formatos
   function populatePortsSelect(ports) {
@@ -227,13 +237,16 @@
   });
 
   ArduinoAgent.on("agent:message", (msg) => {
-    console.log("AGENT RAW:", msg);
-    const ports = extractPortsFromMsg(msg);
-    if (ports.length) {
-      console.log("[WS] detecté puertos en otra clave, actualizo selector");
-      populatePortsSelect(ports);
-    }
-  });
+  // Normaliza y muestra el crudo (para depurar)
+  const rawShown = (typeof msg === "string") ? msg : JSON.stringify(msg);
+  console.log("AGENT RAW (norm):", rawShown);
+
+  const ports = extractPortsFromMsg(msg);
+  if (ports.length) {
+    console.log("[WS] detecté puertos, actualizo selector");
+    populatePortsSelect(ports);
+  }
+});
 
   // Datos serie entrantes
   ArduinoAgent.on("serial:data", (text) => {
