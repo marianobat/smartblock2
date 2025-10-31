@@ -10,6 +10,44 @@
 
   let connected = false;
 
+  function extractPortsFromMsg(msg) {
+  if (!msg || typeof msg !== "object") return [];
+  const keys = ["list", "ports", "serial", "serialPorts", "devices", "P"];
+  let out = [];
+  for (const k of keys) {
+    const v = msg[k];
+    if (Array.isArray(v)) out = out.concat(v);
+  }
+  return out;
+}
+
+function populatePortsSelect(ports) {
+  const select = document.getElementById("portSelect");
+  if (!select) return;
+  select.innerHTML = "";
+  (ports || []).forEach((p) => {
+    let val = "", label = "";
+    if (typeof p === "string") { val = label = p; }
+    else if (p && typeof p === "object") {
+      val =
+        p.Address || p.address || p.Path || p.path ||
+        p.comName || p.port || p.device || p.name || "";
+      label =
+        p.Name || p.product || p.FriendlyName || p.manufacturer ||
+        p.Description || p.description || val || "Serial Port";
+    }
+    if (val) {
+      const opt = document.createElement("option");
+      opt.value = val;
+      opt.textContent = label;
+      select.appendChild(opt);
+    }
+  });
+  const count = select.options.length;
+  log(`Puertos disponibles: ${count}`);
+  if (!count) log("No se encontraron puertos. Verifica conexión física y reinicia el Agent.", "warn");
+}
+  
   // ──────────────────────────────────────────────
   // Helpers
   // ──────────────────────────────────────────────
@@ -53,14 +91,18 @@
   // ──────────────────────────────────────────────
   // Botón: Listar puertos
   // ──────────────────────────────────────────────
-  $("btnList").addEventListener("click", () => {
-    if (!connected) return log("Conecta primero el Agent.", "warn");
-    try {
-      ArduinoAgent.listPorts();
-    } catch (e) {
-      log(`Error: ${e.message}`, "err");
+  document.getElementById("btnList").addEventListener("click", () => {
+  try {
+    if (ArduinoAgent.__emitCommand) {
+      ArduinoAgent.__emitCommand("list");
+      ArduinoAgent.__emitCommand("serial list"); // extra
+    } else {
+      ArduinoAgent.listPorts(); // fallback
     }
-  });
+  } catch (e) {
+    log(`Error: ${e.message}`, "err");
+  }
+});
 
   // ──────────────────────────────────────────────
   // Botón: Abrir puerto
@@ -123,35 +165,8 @@
   });
 
   ArduinoAgent.on("ports:list", (ports) => {
-    portSelect.innerHTML = "";
-
-    const items = Array.isArray(ports) ? ports : [];
-    items.forEach((p) => {
-      let val = "", label = "";
-      if (typeof p === "string") {
-        val = label = p;
-      } else if (p && typeof p === "object") {
-        val =
-          p.Address || p.address || p.Path || p.path ||
-          p.comName || p.port || p.device || p.name || "";
-        label =
-          p.Name || p.product || p.FriendlyName || p.manufacturer ||
-          p.Description || p.description || val || "Serial Port";
-      }
-      if (val) {
-        const opt = document.createElement("option");
-        opt.value = val;
-        opt.textContent = label;
-        portSelect.appendChild(opt);
-      }
-    });
-
-    const count = portSelect.options.length;
-    log(`Puertos disponibles: ${count}`);
-    if (!count) {
-      log("No se encontraron puertos. Verifica conexión física y reinicia el Agent.", "warn");
-    }
-  });
+  populatePortsSelect(Array.isArray(ports) ? ports : []);
+});
 
   ArduinoAgent.on("serial:data", (text) => {
     const clean = String(text).replace(/\r?\n$/, "");
@@ -159,9 +174,10 @@
   });
 
   ArduinoAgent.on("agent:message", (msg) => {
-    // Log de debug completo
-    console.log("AGENT RAW:", msg);
-  });
+  console.log("AGENT RAW:", msg);
+  const ports = extractPortsFromMsg(msg);
+  if (ports.length) populatePortsSelect(ports);
+});
 
   // ──────────────────────────────────────────────
   // Funcionalidad opcional: Upload .hex
