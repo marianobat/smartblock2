@@ -51,6 +51,54 @@ function populatePortsSelect(ports) {
   // ──────────────────────────────────────────────
   // Helpers
   // ──────────────────────────────────────────────
+  function populatePortsSelect(ports) {
+  const select = document.getElementById("portSelect");
+  if (!select) {
+    console.warn("[UI] #portSelect no existe en el DOM");
+    log("No encuentro el selector de puertos (#portSelect).", "err");
+    return;
+  }
+  // Log UI: dimensiones (para saber si está oculto por CSS)
+  console.log("[UI] portSelect visible?", select.offsetWidth, select.offsetHeight);
+
+  select.innerHTML = "";
+  (ports || []).forEach((p) => {
+    let val = "", label = "";
+    if (typeof p === "string") { val = label = p; }
+    else if (p && typeof p === "object") {
+      val =
+        p.Address || p.address || p.Path || p.path ||
+        p.comName || p.port || p.device || p.name || "";
+      label =
+        p.Name || p.product || p.FriendlyName || p.manufacturer ||
+        p.Description || p.description || val || "Serial Port";
+    }
+    if (val) {
+      const opt = document.createElement("option");
+      opt.value = val;
+      opt.textContent = label;
+      select.appendChild(opt);
+    }
+  });
+  console.log("[UI] options cargadas:", select.options.length, ports);
+  const count = select.options.length;
+  log(`Puertos disponibles: ${count}`);
+  if (!count) {
+    log("No se encontraron puertos. Verifica conexión física y reinicia el Agent.", "warn");
+  }
+}
+
+// AUTOTEST UI: añade dos opciones falsas para probar render
+window.__testPopulate = function () {
+  populatePortsSelect([
+    "/dev/cu.usbserial-TEST",
+    { Address: "/dev/cu.usbmodem-TEST", Name: "Arduino (TEST)" }
+  ]);
+  log("Autotest: opciones dummy agregadas al selector.", "ok");
+};
+
+  
+  
   function log(line, cls = "") {
     const div = document.createElement("div");
     if (cls) div.className = cls;
@@ -92,14 +140,21 @@ function populatePortsSelect(ports) {
   // Botón: Listar puertos
   // ──────────────────────────────────────────────
   document.getElementById("btnList").addEventListener("click", () => {
+  console.log("[UI] btnList clickeado");
+  log("Listando puertos...", "warn");
+
   try {
+    // Si tenemos canal crudo, disparamos doble comando; si no, el estándar
     if (ArduinoAgent.__emitCommand) {
+      console.log("[UI] enviando 'list' y 'serial list' por WS");
       ArduinoAgent.__emitCommand("list");
-      ArduinoAgent.__emitCommand("serial list"); // extra
+      ArduinoAgent.__emitCommand("serial list");
     } else {
-      ArduinoAgent.listPorts(); // fallback
+      console.log("[UI] usando ArduinoAgent.listPorts()");
+      ArduinoAgent.listPorts();
     }
   } catch (e) {
+    console.error("[UI] error al listar", e);
     log(`Error: ${e.message}`, "err");
   }
 });
