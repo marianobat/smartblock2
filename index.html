@@ -3,30 +3,29 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>SmartBlock Web — Starter (fix)</title>
+  <title>SmartBlock Web — Cloud Agent</title>
   <link rel="stylesheet" href="./style.css"/>
-  <!-- Blockly v10+ -->
-<script src="https://unpkg.com/blockly@10.4.3/blockly.min.js" defer></script>
-<script src="https://unpkg.com/blockly@10.4.3/blocks.min.js" defer></script>
-<script src="https://unpkg.com/blockly@10.4.3/msg/es.js" defer></script>
 
-<!-- Tus archivos (después de Blockly) -->
-<script src="./blocks.js" defer></script>
-<script src="./generator.js" defer></script>
-<script src="./app.js" defer></script>
-  
+  <!-- Blockly -->
+  <script src="https://unpkg.com/blockly@10.4.3/blockly.min.js" defer></script>
+  <script src="https://unpkg.com/blockly@10.4.3/blocks.min.js" defer></script>
+  <script src="https://unpkg.com/blockly@10.4.3/msg/es.js" defer></script>
+
+  <!-- Archivos propios -->
+  <script src="./blocks.js" defer></script>
+  <script src="./generator.js" defer></script>
+  <script src="./app.js" defer></script>
 </head>
+
 <body>
   <header>
     <div class="brand">
       <h1>SmartBlock <span class="tag">web</span></h1>
-      <p class="subtitle">Bloques → C++ → Export .ino · WebSerial (opcional)</p>
+      <p class="subtitle">Bloques → C++ → Export .ino · Conexión vía Cloud Agent</p>
     </div>
     <div class="actions">
       <button id="btn-generate">Generar código</button>
       <button id="btn-download">Descargar .ino</button>
-      <button id="btn-connect">Conectar (WebSerial)</button>
-      <label>Puerto: <span id="port-label">no conectado</span></label>
       <button id="btn-test-led">Test LED13 (on/off)</button>
     </div>
   </header>
@@ -34,33 +33,36 @@
   <main>
     <section id="left">
       <div id="blocklyDiv"></div>
-    <xml id="toolbox" style="display:none">
-      <category name="Estructura" colour="#D39D2A">
-        <block type="arduino_setup"></block>
-        <block type="arduino_loop"></block>
-      </category>
-      <category name="⚙️ Control" colour="#FFB703">
-        <block type="controls_repeat_ext"></block>
-        <block type="controls_if"></block>
-      </category>
-      <category name="🧠 Lógica" colour="#219EBC">
-        <block type="logic_compare"></block>
-        <block type="logic_boolean"></block>
-        <block type="math_number"></block>
-      </category>
-      <category name="🔌 Actuadores" colour="#FB8500">
-        <block type="digital_write_pin"></block>
-        <block type="delay_ms"></block>
-      </category>
-      <category name="📈 Sensores" colour="#8ECAE6">
-        <block type="analog_read_pin"></block>
-      </category>
-    </xml>
+
+      <xml id="toolbox" style="display:none">
+        <category name="Estructura" colour="#D39D2A">
+          <block type="arduino_setup"></block>
+          <block type="arduino_loop"></block>
+        </category>
+        <category name="⚙️ Control" colour="#FFB703">
+          <block type="controls_repeat_ext"></block>
+          <block type="controls_if"></block>
+        </category>
+        <category name="🧠 Lógica" colour="#219EBC">
+          <block type="logic_compare"></block>
+          <block type="logic_boolean"></block>
+          <block type="math_number"></block>
+        </category>
+        <category name="🔌 Actuadores" colour="#FB8500">
+          <block type="digital_write_pin"></block>
+          <block type="delay_ms"></block>
+        </category>
+        <category name="📈 Sensores" colour="#8ECAE6">
+          <block type="analog_read_pin"></block>
+        </category>
+      </xml>
     </section>
+
     <section id="right">
       <h3>Sketch (.ino)</h3>
       <pre id="code"></pre>
-      <h3>Consola Serial (opcional)</h3>
+
+      <h3>Consola Serial</h3>
       <div class="serial">
         <div class="row">
           <input id="serial-input" placeholder="Comando, ej: W 13 H o R A0"/>
@@ -72,46 +74,59 @@
   </main>
 
   <footer>
-    <small>SmartBlock Web Starter · MIT</small>
+    <small>SmartBlock Web Starter · Integración Cloud Agent · MIT</small>
   </footer>
-  <!-- Al final de index.html, justo antes de </body> -->
-<style>
-  .row { display:flex; gap:8px; align-items:center; margin:10px 0; flex-wrap:wrap; }
-  #log { white-space:pre-wrap; background:#f6f8fa; padding:10px; border:1px solid #ddd; border-radius:6px; height:220px; overflow:auto; }
-  .ok { color:#14803a; } .warn { color:#a15c00; } .err { color:#b00020; }
-</style>
 
-<section id="arduino-agent-panel">
-  <h2>Conexión con Arduino Cloud Agent</h2>
+  <!-- Estilos para panel del Agent -->
+  <style>
+    .row { display:flex; gap:8px; align-items:center; margin:10px 0; flex-wrap:wrap; }
+    #log { white-space:pre-wrap; background:#f6f8fa; padding:10px; border:1px solid #ddd; border-radius:6px; height:220px; overflow:auto; }
+    .ok { color:#14803a; }
+    .warn { color:#a15c00; }
+    .err { color:#b00020; }
+  </style>
 
-  <div class="row">
-    <button id="btnConnect">Conectar Agent</button>
-    <span id="agentStatus" class="warn">Sin conexión</span>
-  </div>
+  <!-- Panel de control del Arduino Cloud Agent -->
+  <section id="arduino-agent-panel">
+    <h2>Conexión con Arduino Cloud Agent</h2>
 
-  <div class="row">
-    <button id="btnList">Listar puertos</button>
-    <select id="portSelect"></select>
-    <input id="baud" type="number" value="115200" min="300" step="300" style="width:120px" />
-    <button id="btnOpen">Abrir</button>
-    <button id="btnClose">Cerrar</button>
-    <span id="portStatus" class="warn">Puerto cerrado</span>
-  </div>
+    <div class="row">
+      <button id="btnConnect">Conectar Agent</button>
+      <span id="agentStatus" class="warn">Sin conexión</span>
+    </div>
 
-  <div class="row">
-    <input id="line" type="text" placeholder="Comando o texto a enviar..." style="min-width:260px" />
-    <button id="btnSend">Enviar</button>
-  </div>
+    <div class="row">
+      <button id="btnList">Listar puertos</button>
+      <select id="portSelect"></select>
+      <input id="baud" type="number" value="115200" min="300" step="300" style="width:120px" />
+      <button id="btnOpen">Abrir</button>
+      <button id="btnClose">Cerrar</button>
+      <span id="portStatus" class="warn">Puerto cerrado</span>
+    </div>
 
-  <h3>Monitor serie</h3>
-  <div id="log"></div>
-</section>
+    <div class="row">
+      <input id="line" type="text" placeholder="Comando o texto a enviar..." style="min-width:260px" />
+      <button id="btnSend">Enviar</button>
+    </div>
 
-<!-- Cliente Socket.IO desde CDN -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.4.0/socket.io.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <h3>Monitor serie</h3>
+    <div id="log"></div>
 
-<!-- Integración Agent -->
-<script src="./agent.js"></script>
-<script src="./serial-ui.js"></script>
+    <!-- Panel opcional: subir .hex -->
+    <h3>Subir programa (.hex)</h3>
+    <div class="row">
+      <input type="file" id="hexFile" accept=".hex,.bin" />
+      <input type="text" id="fqbn" placeholder="FQBN (p.ej. arduino:avr:uno)" style="min-width:240px" />
+      <button id="btnUpload">Subir .hex</button>
+    </div>
+  </section>
+
+  <!-- Cliente Socket.IO (v2.x) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.4.0/socket.io.js"
+          crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+  <!-- Integración Cloud Agent -->
+  <script src="./agent.js"></script>
+  <script src="./serial-ui.js"></script>
 </body>
 </html>
