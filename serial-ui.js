@@ -1,11 +1,12 @@
-// serial-ui.js — Interfaz básica para Arduino Cloud Agent (Socket.IO v2.x)
-// Compatible con agent.js (con __emitCommand y uploadHex)
-// Modo: SOLO Cloud Agent (Web Serial deshabilitado)
+// serial-ui.js — Interfaz para Arduino Cloud Agent (Socket.IO v2.x)
+// - Solo usa Cloud Agent (Web Serial deshabilitado)
+// - Intenta listar puertos por WebSocket; si no llega nada, hace fallback HTTP a /list
+// - Compatible con agent.js que expone __emitCommand y uploadHex
 
 (function () {
   const $ = (id) => document.getElementById(id);
 
-  // Elementos UI esperados en index.html
+  // Elementos UI
   const logEl        = $("log");
   const agentStatus  = $("agentStatus");
   const portStatus   = $("portStatus");
@@ -69,10 +70,10 @@
       } else if (p && typeof p === "object") {
         val =
           p.Address || p.address || p.Path || p.path ||
-          p.comName || p.port || p.device || p.name || "";
+          p.comName || p.port || p.device || p.name || p.path || "";
         label =
           p.Name || p.product || p.FriendlyName || p.manufacturer ||
-          p.Description || p.description || val || "Serial Port";
+          p.Description || p.description || p.friendlyName || val || "Serial Port";
       }
       if (val) {
         const opt = document.createElement("option");
@@ -90,6 +91,7 @@
     }
   }
 
+  // Lee un archivo como Base64 (para upload .hex)
   async function readFileAsBase64(file) {
     return new Promise((res, rej) => {
       const reader = new FileReader();
@@ -110,9 +112,45 @@
   }
 
   // ──────────────────────────────────────────────
+  // Fallback HTTP: prueba /list en 8992 y 8991
+  // ──────────────────────────────────────────────
+  async function fallbackHttpList() {
+    const urls = [
+      "http://127.0.0.1:8992/list",
+      "http://127.0.0.1:8991/list"
+    ];
+    for (const u of urls) {
+      try {
+        const r = await fetch(u, { cache: "no-store" });
+        if (!r.ok) continue;
+        const j = await r.json().catch(() => null);
+        if (j && (Array.isArray(j.list) || Array.isArray(j.ports))) {
+          const ports = j.list || j.ports;
+          console.log("[HTTP] /list →", ports);
+          populatePortsSelect(ports);
+          log("Puertos recuperados vía HTTP", "ok");
+          return true;
+        }
+      } catch (e) {
+        console.warn("[HTTP] fallback /list falló en", u, e?.message || e);
+      }
+    }
+    return false;
+  }
+
+  function scheduleWsFallback(delayMs = 600) {
+    setTimeout(async () => {
+      const hasOptions = (portSelect && portSelect.options && portSelect.options.length > 0);
+      if (!hasOptions) {
+        console.log("[UI] WS no devolvió lista, intento fallback HTTP /list");
+        await fallbackHttpList();
+      }
+    }, delayMs);
+  }
+
+  // ──────────────────────────────────────────────
   // Botones
   // ──────────────────────────────────────────────
-
   btnConnect && btnConnect.addEventListener("click", async () => {
     if (agentStatus) { agentStatus.textContent = "Conectando..."; agentStatus.className = "warn"; }
     try {
@@ -120,7 +158,8 @@
       connected = true;
       if (agentStatus) { agentStatus.textContent = `Conectado ✔ (v${info.version})`; agentStatus.className = "ok"; }
       log(`Agent conectado (${info.version})`, "ok");
-      // Listamos puertos al conectar
+
+      // Intento listar al conectar (WS)
       try {
         if (ArduinoAgent.__emitCommand) {
           console.log("[UI] enviando 'list' y 'serial list' por WS (auto)");
@@ -132,20 +171,24 @@
       } catch (e) {
         console.error("[UI] error al listar post-conexión", e);
       }
+
+      // Programa fallback HTTP si WS no trajo puertos
+      scheduleWsFallback(700);
+
     } catch (e) {
       if (agentStatus) { agentStatus.textContent = "No conectado"; agentStatus.className = "err"; }
       log(`Error: ${e.message}`, "err");
     }
   });
 
-  btnList && btnList.addEventListener("click", () => {
+  btnList && btnList.addEventListener("click", async () => {
     console.log("[UI] btnList clickeado");
     log("Listando puertos...", "warn");
     try {
       if (ArduinoAgent.__emitCommand) {
         console.log("[UI] enviando 'list' y 'serial list' por WS");
-        ArduinoAgent.__emitCommand("list");        // formato clásico
-        ArduinoAgent.__emitCommand("serial list"); // algunas builds usan este
+        ArduinoAgent.__emitCommand("list");
+        ArduinoAgent.__emitCommand("serial list");
       } else {
         console.log("[UI] usando ArduinoAgent.listPorts()");
         ArduinoAgent.listPorts();
@@ -154,6 +197,9 @@
       console.error("[UI] error al listar", e);
       log(`Error: ${e.message}`, "err");
     }
+
+    // Fallback HTTP si no aparece nada por WS
+    scheduleWsFallback(700);
   });
 
   btnOpen && btnOpen.addEventListener("click", () => {
@@ -194,10 +240,9 @@
   // ──────────────────────────────────────────────
   // Eventos del Agent
   // ──────────────────────────────────────────────
-
   ArduinoAgent.on("agent:connect", (info) => {
     log(`WS conectado: ${info.endpoint}`, "ok");
-    // Listar automáticamente al conectar
+    // Listar automáticamente al conectar (WS)
     try {
       if (ArduinoAgent.__emitCommand) {
         ArduinoAgent.__emitCommand("list");
@@ -208,6 +253,8 @@
     } catch (e) {
       console.error("[UI] error al listar en agent:connect", e);
     }
+    // Fallback HTTP si WS no respondió
+    scheduleWsFallback(700);
   });
 
   ArduinoAgent.on("agent:disconnect", () => {
@@ -219,13 +266,13 @@
     log(`Agent error: ${msg}`, "err");
   });
 
-  // Caso clásico: el Agent emite { list: [...] }
+  // Caso clásico: el Agent emite { list: [...] } por 'command'
   ArduinoAgent.on("ports:list", (ports) => {
     console.log("[WS] ports:list recibido:", ports);
     populatePortsSelect(Array.isArray(ports) ? ports : []);
   });
 
-  // Fallback/depuración: capturar *cualquier* mensaje que incluya lista
+  // Capturar *cualquier* mensaje que incluya lista en otra clave
   ArduinoAgent.on("agent:message", (msg) => {
     console.log("AGENT RAW:", msg);
     const ports = extractPortsFromMsg(msg);
@@ -260,13 +307,13 @@
         log(`Upload completado. Respuesta: ${JSON.stringify(resp)}`, "ok");
       } catch (e) {
         log(`Upload falló: ${e.message}`, "err");
-        log("Si ves 401/403 o 'signature required', tu Agent requiere firma; podemos activar un micro-backend de firma.", "warn");
+        log("Si ves 401/403 o 'signature required', tu Agent requiere firma; conviene Agent 'open' o usar un bridge con arduino-cli.", "warn");
       }
     });
   }
 
   // ──────────────────────────────────────────────
-  // Autotest visual del selector (ejecutar en consola: __testPopulate())
+  // Autotest del selector (ejecutar en consola: __testPopulate())
   // ──────────────────────────────────────────────
   window.__testPopulate = function () {
     populatePortsSelect([
