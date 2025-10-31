@@ -1,12 +1,12 @@
-// serial-ui.js — Interfaz para Arduino Cloud Agent (Socket.IO v2.x)
-// - Solo usa Cloud Agent (Web Serial deshabilitado)
-// - Intenta listar puertos por WebSocket; si no llega nada, hace fallback HTTP a /list
-// - Compatible con agent.js que expone __emitCommand y uploadHex
+// serial-ui.js — UI para Arduino Cloud Agent (Socket.IO v2.x)
+// - Solo Cloud Agent (Web Serial deshabilitado)
+// - Lee listas de puertos desde msg.Ports (y también msg.list si existiera)
+// - Usa "Name" como path (/dev/cu.usbserial-10, COM3, etc.)
 
 (function () {
   const $ = (id) => document.getElementById(id);
 
-  // Elementos UI
+  // Elementos UI esperados
   const logEl        = $("log");
   const agentStatus  = $("agentStatus");
   const portStatus   = $("portStatus");
@@ -42,8 +42,8 @@
   // Extrae puertos desde distintos formatos de mensaje del Agent
   function extractPortsFromMsg(msg) {
     if (!msg || typeof msg !== "object") return [];
-    // Algunas builds exponen diferentes claves
-    const keys = ["list", "ports", "serial", "serialPorts", "devices", "P"];
+    // ✅ Tu Agent 1.7.0 envía "Ports" (P mayúscula)
+    const keys = ["Ports", "list", "ports", "serial", "serialPorts", "devices", "P"];
     let out = [];
     for (const k of keys) {
       const v = msg[k];
@@ -59,8 +59,6 @@
       log("No encuentro el selector de puertos (#portSelect).", "err");
       return;
     }
-    // Log de visibilidad (por si está oculto por CSS)
-    console.log("[UI] portSelect size:", portSelect.offsetWidth, portSelect.offsetHeight);
 
     portSelect.innerHTML = "";
     (ports || []).forEach((p) => {
@@ -68,12 +66,14 @@
       if (typeof p === "string") {
         val = label = p;
       } else if (p && typeof p === "object") {
+        // ✅ Prioriza "Name" como ruta del puerto (tal como lo envía tu Agent)
         val =
-          p.Address || p.address || p.Path || p.path ||
-          p.comName || p.port || p.device || p.name || p.path || "";
+          p.Name || p.Address || p.address || p.Path || p.path ||
+          p.comName || p.port || p.device || p.name || "";
+
         label =
-          p.Name || p.product || p.FriendlyName || p.manufacturer ||
-          p.Description || p.description || p.friendlyName || val || "Serial Port";
+          p.FriendlyName || p.Description || p.description ||
+          p.manufacturer || p.product || p.Name || val || "Serial Port";
       }
       if (val) {
         const opt = document.createElement("option");
@@ -83,7 +83,6 @@
       }
     });
 
-    console.log("[UI] options cargadas:", portSelect.options.length, ports);
     const count = portSelect.options.length;
     log(`Puertos disponibles: ${count}`);
     if (!count) {
@@ -112,43 +111,6 @@
   }
 
   // ──────────────────────────────────────────────
-  // Fallback HTTP: prueba /list en 8992 y 8991
-  // ──────────────────────────────────────────────
-  async function fallbackHttpList() {
-    const urls = [
-      "http://127.0.0.1:8992/list",
-      "http://127.0.0.1:8991/list"
-    ];
-    for (const u of urls) {
-      try {
-        const r = await fetch(u, { cache: "no-store" });
-        if (!r.ok) continue;
-        const j = await r.json().catch(() => null);
-        if (j && (Array.isArray(j.list) || Array.isArray(j.ports))) {
-          const ports = j.list || j.ports;
-          console.log("[HTTP] /list →", ports);
-          populatePortsSelect(ports);
-          log("Puertos recuperados vía HTTP", "ok");
-          return true;
-        }
-      } catch (e) {
-        console.warn("[HTTP] fallback /list falló en", u, e?.message || e);
-      }
-    }
-    return false;
-  }
-
-  function scheduleWsFallback(delayMs = 600) {
-    setTimeout(async () => {
-      const hasOptions = (portSelect && portSelect.options && portSelect.options.length > 0);
-      if (!hasOptions) {
-        console.log("[UI] WS no devolvió lista, intento fallback HTTP /list");
-        await fallbackHttpList();
-      }
-    }, delayMs);
-  }
-
-  // ──────────────────────────────────────────────
   // Botones
   // ──────────────────────────────────────────────
   btnConnect && btnConnect.addEventListener("click", async () => {
@@ -159,7 +121,7 @@
       if (agentStatus) { agentStatus.textContent = `Conectado ✔ (v${info.version})`; agentStatus.className = "ok"; }
       log(`Agent conectado (${info.version})`, "ok");
 
-      // Intento listar al conectar (WS)
+      // Intento listar al conectar (WS): ambas variantes
       try {
         if (ArduinoAgent.__emitCommand) {
           console.log("[UI] enviando 'list' y 'serial list' por WS (auto)");
@@ -171,10 +133,6 @@
       } catch (e) {
         console.error("[UI] error al listar post-conexión", e);
       }
-
-      // Programa fallback HTTP si WS no trajo puertos
-      scheduleWsFallback(700);
-
     } catch (e) {
       if (agentStatus) { agentStatus.textContent = "No conectado"; agentStatus.className = "err"; }
       log(`Error: ${e.message}`, "err");
@@ -197,9 +155,6 @@
       console.error("[UI] error al listar", e);
       log(`Error: ${e.message}`, "err");
     }
-
-    // Fallback HTTP si no aparece nada por WS
-    scheduleWsFallback(700);
   });
 
   btnOpen && btnOpen.addEventListener("click", () => {
@@ -217,7 +172,7 @@
 
   btnClose && btnClose.addEventListener("click", () => {
     try {
-      ArduinoAgent.closePort();
+      ArduinoAgent.closePort(portSelect ? portSelect.value : "");
       if (portStatus) { portStatus.textContent = "Puerto cerrado"; portStatus.className = "warn"; }
       log("Puerto cerrado.");
     } catch (e) {
@@ -229,7 +184,8 @@
     const line = (inputLine && inputLine.value) || "";
     if (!line.trim()) return;
     try {
-      ArduinoAgent.sendLine(line);
+      // Algunos Agents esperan que el puerto ya esté abierto
+      ArduinoAgent.sendLine(line, portSelect ? portSelect.value : undefined);
       log(`→ ${line}`);
       if (inputLine) inputLine.value = "";
     } catch (e) {
@@ -242,7 +198,7 @@
   // ──────────────────────────────────────────────
   ArduinoAgent.on("agent:connect", (info) => {
     log(`WS conectado: ${info.endpoint}`, "ok");
-    // Listar automáticamente al conectar (WS)
+    // Auto-listar al conectar
     try {
       if (ArduinoAgent.__emitCommand) {
         ArduinoAgent.__emitCommand("list");
@@ -253,8 +209,6 @@
     } catch (e) {
       console.error("[UI] error al listar en agent:connect", e);
     }
-    // Fallback HTTP si WS no respondió
-    scheduleWsFallback(700);
   });
 
   ArduinoAgent.on("agent:disconnect", () => {
@@ -266,13 +220,12 @@
     log(`Agent error: ${msg}`, "err");
   });
 
-  // Caso clásico: el Agent emite { list: [...] } por 'command'
+  // Caso clásico / y tu build: recibimos lista via 'command'/'message'/'notification'
   ArduinoAgent.on("ports:list", (ports) => {
     console.log("[WS] ports:list recibido:", ports);
     populatePortsSelect(Array.isArray(ports) ? ports : []);
   });
 
-  // Capturar *cualquier* mensaje que incluya lista en otra clave
   ArduinoAgent.on("agent:message", (msg) => {
     console.log("AGENT RAW:", msg);
     const ports = extractPortsFromMsg(msg);
@@ -307,7 +260,7 @@
         log(`Upload completado. Respuesta: ${JSON.stringify(resp)}`, "ok");
       } catch (e) {
         log(`Upload falló: ${e.message}`, "err");
-        log("Si ves 401/403 o 'signature required', tu Agent requiere firma; conviene Agent 'open' o usar un bridge con arduino-cli.", "warn");
+        log("Si ves 'signature required', tu Agent requiere firma → usar Agent 'open' o un bridge con arduino-cli.", "warn");
       }
     });
   }
@@ -318,7 +271,7 @@
   window.__testPopulate = function () {
     populatePortsSelect([
       "/dev/cu.usbserial-TEST",
-      { Address: "/dev/cu.usbmodem-TEST", Name: "Arduino (TEST)" }
+      { Name: "/dev/cu.usbmodem-TEST", FriendlyName: "Arduino (TEST)" }
     ]);
     log("Autotest: opciones dummy agregadas al selector.", "ok");
   };
