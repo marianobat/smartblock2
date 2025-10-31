@@ -1,4 +1,6 @@
-// serial-ui.js
+// serial-ui.js — Interfaz básica para controlar Arduino Cloud Agent desde la web
+// Funciona junto con agent.js y socket.io v2.4.0
+
 (function () {
   const $ = (id) => document.getElementById(id);
   const logEl = $("log");
@@ -6,6 +8,11 @@
   const portStatus = $("portStatus");
   const portSelect = $("portSelect");
 
+  let connected = false;
+
+  // ──────────────────────────────────────────────
+  // Helpers
+  // ──────────────────────────────────────────────
   function log(line, cls = "") {
     const div = document.createElement("div");
     if (cls) div.className = cls;
@@ -14,15 +21,27 @@
     logEl.scrollTop = logEl.scrollHeight;
   }
 
-  $("btnConnect")?.addEventListener("click", async () => {
+  // Desactiva Web Serial para evitar conflictos
+  if ("serial" in navigator) {
+    navigator.serial.requestPort = async () => {
+      throw new Error("Web Serial desactivado: se usa Arduino Cloud Agent.");
+    };
+  }
+
+  // ──────────────────────────────────────────────
+  // Botón: Conectar Agent
+  // ──────────────────────────────────────────────
+  $("btnConnect").addEventListener("click", async () => {
     agentStatus.textContent = "Conectando...";
     agentStatus.className = "warn";
     try {
-      await ArduinoAgent.connect();
-      agentStatus.textContent = "Conectado al Agent ✔";
+      const info = await ArduinoAgent.connect();
+      connected = true;
+      agentStatus.textContent = `Conectado ✔ (v${info.version})`;
       agentStatus.className = "ok";
-      log("Agent conectado.", "ok");
-      // listar puertos automáticamente
+      log(`Agent conectado (${info.version})`, "ok");
+
+      // Una vez conectado, listamos puertos
       ArduinoAgent.listPorts();
     } catch (e) {
       agentStatus.textContent = "No conectado";
@@ -31,11 +50,22 @@
     }
   });
 
-  $("btnList")?.addEventListener("click", () => {
-    try { ArduinoAgent.listPorts(); } catch (e) { log(`Error: ${e.message}`, "err"); }
+  // ──────────────────────────────────────────────
+  // Botón: Listar puertos
+  // ──────────────────────────────────────────────
+  $("btnList").addEventListener("click", () => {
+    if (!connected) return log("Conecta primero el Agent.", "warn");
+    try {
+      ArduinoAgent.listPorts();
+    } catch (e) {
+      log(`Error: ${e.message}`, "err");
+    }
   });
 
-  $("btnOpen")?.addEventListener("click", () => {
+  // ──────────────────────────────────────────────
+  // Botón: Abrir puerto
+  // ──────────────────────────────────────────────
+  $("btnOpen").addEventListener("click", () => {
     const p = portSelect.value;
     const b = Number($("baud").value || 115200);
     if (!p) return log("Elegí un puerto.", "warn");
@@ -44,48 +74,131 @@
       portStatus.textContent = `Abierto: ${p} @ ${b}`;
       portStatus.className = "ok";
       log(`Puerto abierto: ${p} @ ${b}`, "ok");
-    } catch (e) { log(`Error: ${e.message}`, "err"); }
+    } catch (e) {
+      log(`Error: ${e.message}`, "err");
+    }
   });
 
-  $("btnClose")?.addEventListener("click", () => {
+  // ──────────────────────────────────────────────
+  // Botón: Cerrar puerto
+  // ──────────────────────────────────────────────
+  $("btnClose").addEventListener("click", () => {
     ArduinoAgent.closePort();
     portStatus.textContent = "Puerto cerrado";
     portStatus.className = "warn";
     log("Puerto cerrado.");
   });
 
-  $("btnSend")?.addEventListener("click", () => {
+  // ──────────────────────────────────────────────
+  // Botón: Enviar texto al Arduino
+  // ──────────────────────────────────────────────
+  $("btnSend").addEventListener("click", () => {
     const line = $("line").value || "";
     if (!line.trim()) return;
     try {
       ArduinoAgent.sendLine(line);
       log(`→ ${line}`);
       $("line").value = "";
-    } catch (e) { log(`Error: ${e.message}`, "err"); }
+    } catch (e) {
+      log(`Error: ${e.message}`, "err");
+    }
   });
 
+  // ──────────────────────────────────────────────
   // Eventos del Agent
-  ArduinoAgent.on("agent:connect", (info) => log(`WS conectado (${info.endpoint})`, "ok"));
-  ArduinoAgent.on("agent:disconnect", () => log("Desconectado del Agent.", "warn"));
-  ArduinoAgent.on("agent:error", (msg) => log(`Agent error: ${msg}`, "err"));
+  // ──────────────────────────────────────────────
+
+  ArduinoAgent.on("agent:connect", (info) => {
+    log(`WS conectado: ${info.endpoint}`, "ok");
+    ArduinoAgent.listPorts(); // listar automáticamente al conectar
+  });
+
+  ArduinoAgent.on("agent:disconnect", () => {
+    log("Desconectado del Agent.", "warn");
+    connected = false;
+  });
+
+  ArduinoAgent.on("agent:error", (msg) => {
+    log(`Agent error: ${msg}`, "err");
+  });
 
   ArduinoAgent.on("ports:list", (ports) => {
     portSelect.innerHTML = "";
-    (ports || []).forEach((p) => {
-      const val = p.Address || p.address || p;
-      const label = p.Name || p.product || p.Address || p;
-      const opt = document.createElement("option");
-      opt.value = val;
-      opt.textContent = label;
-      portSelect.appendChild(opt);
+
+    const items = Array.isArray(ports) ? ports : [];
+    items.forEach((p) => {
+      let val = "", label = "";
+      if (typeof p === "string") {
+        val = label = p;
+      } else if (p && typeof p === "object") {
+        val =
+          p.Address || p.address || p.Path || p.path ||
+          p.comName || p.port || p.device || p.name || "";
+        label =
+          p.Name || p.product || p.FriendlyName || p.manufacturer ||
+          p.Description || p.description || val || "Serial Port";
+      }
+      if (val) {
+        const opt = document.createElement("option");
+        opt.value = val;
+        opt.textContent = label;
+        portSelect.appendChild(opt);
+      }
     });
-    log(`Puertos disponibles: ${(ports || []).length}`);
+
+    const count = portSelect.options.length;
+    log(`Puertos disponibles: ${count}`);
+    if (!count) {
+      log("No se encontraron puertos. Verifica conexión física y reinicia el Agent.", "warn");
+    }
   });
 
   ArduinoAgent.on("serial:data", (text) => {
     const clean = String(text).replace(/\r?\n$/, "");
     log(`← ${clean}`);
-    // Si tu firmware envía JSON por línea, aquí podrías:
-    // try { const obj = JSON.parse(clean); /* actualizar bloques */ } catch {}
   });
+
+  ArduinoAgent.on("agent:message", (msg) => {
+    // Log de debug completo
+    console.log("AGENT RAW:", msg);
+  });
+
+  // ──────────────────────────────────────────────
+  // Funcionalidad opcional: Upload .hex
+  // ──────────────────────────────────────────────
+  const hexInput = $("hexFile");
+  const fqbnInput = $("fqbn");
+  const btnUpload = $("btnUpload");
+
+  if (btnUpload) {
+    btnUpload.addEventListener("click", async () => {
+      try {
+        const file = hexInput.files[0];
+        const fqbn = fqbnInput.value.trim();
+        const port = portSelect.value;
+        if (!file) return log("Elegí un archivo .hex.", "warn");
+        if (!fqbn) return log("Indicá FQBN (ej: arduino:avr:uno).", "warn");
+        if (!port) return log("Elegí un puerto.", "warn");
+
+        const base64 = await readFileAsBase64(file);
+        log("Subiendo firmware...", "warn");
+        const resp = await ArduinoAgent.uploadHex({ fqbn, port, base64, filename: file.name });
+        log(`Upload completado. Respuesta: ${JSON.stringify(resp)}`, "ok");
+      } catch (e) {
+        log(`Upload falló: ${e.message}`, "err");
+      }
+    });
+  }
+
+  async function readFileAsBase64(file) {
+    return new Promise((res, rej) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const b64 = btoa(String.fromCharCode(...new Uint8Array(reader.result)));
+        res(b64);
+      };
+      reader.onerror = rej;
+      reader.readAsArrayBuffer(file);
+    });
+  }
 })();
