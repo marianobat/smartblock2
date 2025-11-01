@@ -20,8 +20,13 @@
 <body>
   <header>
     <div class="brand">
-      <h1>SmartBlock <span class="tag">web</span></h1>
-      <p class="subtitle">Bloques → C++ → Export .ino · Conexión vía Cloud Agent</p>
+      <figure class="brand-media" data-placeholder="SB">
+        <img src="./assets/brand-logo.svg" alt="Logotipo SmartBlock" id="brandLogo" class="brand-logo" />
+      </figure>
+      <div class="brand-copy">
+        <h1>SmartBlock <span class="tag">web</span></h1>
+        <p class="subtitle">Bloques → C++ → Export .ino · Conexión vía Cloud Agent</p>
+      </div>
     </div>
     <div class="actions">
       <button id="btn-generate">Generar código</button>
@@ -35,40 +40,77 @@
       <div id="blocklyDiv"></div>
 
       <xml id="toolbox" style="display:none">
-        <category name="Estructura" colour="#D39D2A">
-          <block type="arduino_setup"></block>
-          <block type="arduino_loop"></block>
-        </category>
-        <category name="⚙️ Control" colour="#FFB703">
-          <block type="controls_repeat_ext"></block>
+        <category name="⚙️ Control" categorystyle="loop_category">
+          <block type="controls_repeat_ext">
+            <value name="TIMES">
+              <shadow type="math_number">
+                <field name="NUM">4</field>
+              </shadow>
+            </value>
+          </block>
           <block type="controls_if"></block>
+          <block type="delay_ms"></block>
         </category>
-        <category name="🧠 Lógica" colour="#219EBC">
+
+        <category name="🧠 Lógica" categorystyle="logic_category">
           <block type="logic_compare"></block>
           <block type="logic_boolean"></block>
           <block type="math_number"></block>
         </category>
-        <category name="🔌 Actuadores" colour="#FB8500">
+
+        <category name="🔌 Actuadores" categorystyle="io_category">
           <block type="digital_write_pin"></block>
-          <block type="delay_ms"></block>
         </category>
-        <category name="📈 Sensores" colour="#8ECAE6">
+
+        <category name="📟 Displays" categorystyle="display_category">
+          <block type="display_lcd_print"></block>
+          <block type="display_lcd_clear"></block>
+          <block type="display_matrix_pattern"></block>
+        </category>
+
+        <category name="📈 Sensores" categorystyle="sensor_category">
           <block type="analog_read_pin"></block>
+          <block type="sensor_button_read"></block>
+          <block type="sensor_soil_moisture"></block>
+          <block type="sensor_dht11_value"></block>
+        </category>
+
+        <category name="⚙️ Motores" categorystyle="motor_category">
+          <block type="motor_dc_speed">
+            <value name="SPEED">
+              <shadow type="math_number">
+                <field name="NUM">180</field>
+              </shadow>
+            </value>
+          </block>
+          <block type="motor_servo_write">
+            <value name="ANGLE">
+              <shadow type="math_number">
+                <field name="NUM">90</field>
+              </shadow>
+            </value>
+          </block>
         </category>
       </xml>
     </section>
 
-    <section id="right">
-      <h3>Sketch (.ino)</h3>
-      <pre id="code"></pre>
+    <div id="codeSplitter" class="code-splitter" role="separator" aria-orientation="vertical" aria-controls="codePaneBody">
+      <button id="codeToggle" class="code-pane-toggle" type="button" aria-expanded="true">
+        <span class="icon">◀</span>
+        <span class="label">Ocultar</span>
+      </button>
+    </div>
 
-      <h3>Consola Serial</h3>
-      <div class="serial">
-        <div class="row">
-          <input id="serial-input" placeholder="Comando, ej: W 13 H o R A0"/>
-          <button id="serial-send">Enviar</button>
-        </div>
-        <pre id="serial-log"></pre>
+    <section id="right" class="code-pane">
+      <div id="codePaneBody" class="code-pane-content" role="region" aria-label="Sketch generado">
+        <header class="code-pane-header">
+          <h3>Sketch (.ino)</h3>
+          <div class="code-actions">
+            <span id="code-status" class="badge badge-muted">Auto</span>
+            <button id="code-copy" type="button">Copiar</button>
+          </div>
+        </header>
+        <pre id="code"></pre>
       </div>
     </section>
   </main>
@@ -77,71 +119,83 @@
     <small>SmartBlock Web Starter · Integración Cloud Agent · MIT</small>
   </footer>
 
-  <!-- Estilos para panel del Agent -->
-  <style>
-    .row { display:flex; gap:8px; align-items:center; margin:10px 0; flex-wrap:wrap; }
-    #log { white-space:pre-wrap; background:#f6f8fa; padding:10px; border:1px solid #ddd; border-radius:6px; height:220px; overflow:auto; }
-    .ok { color:#14803a; }
-    .warn { color:#a15c00; }
-    .err { color:#b00020; }
-    .hidden { display: none !important; }
-    #uploader-panel { margin: 16px 0; padding: 12px; border: 1px solid #e1e5ec; border-radius: 10px; }
-    #uploader-panel label { margin-right: 6px; }
-    #uploader-status { margin-left: 8px; font-weight: 600; }
-  </style>
-
-  <!-- Panel de control del Arduino Cloud Agent -->
-  <section id="arduino-agent-panel">
-    <h2>Conexión con Arduino Cloud Agent</h2>
-
-    <div class="row">
-      <button id="btnConnect">Conectar Agent</button>
-      <span id="agentStatus" class="warn">Sin conexión</span>
+  <!-- Panel simplificado de conexión y subida -->
+  <section id="agent-panel">
+    <div class="agent-header">
+      <h2>Subir a la placa</h2>
+      <div class="agent-header-status">
+        <span id="uploader-status" class="badge warn">Buscando uploader…</span>
+        <span id="uploader-endpoint" class="endpoint-label">—</span>
+      </div>
     </div>
 
-    <div class="row">
-      <button id="btnList">Listar puertos</button>
-      <select id="portSelect"></select>
-      <input id="baud" type="number" value="115200" min="300" step="300" style="width:120px" />
-      <button id="btnOpen">Abrir</button>
-      <button id="btnClose">Cerrar</button>
-      <span id="portStatus" class="warn">Puerto cerrado</span>
+    <div class="agent-steps">
+      <article id="upload-step-detect" class="step-card" data-state="searching">
+        <header class="step-head">
+          <span class="step-index">1</span>
+          <div>
+            <h3>Detectar uploader local</h3>
+            <p class="step-description">Necesitamos encontrar el agente que sube el sketch desde tu computadora.</p>
+          </div>
+        </header>
+        <div class="step-body">
+          <p id="uploader-status-detail" class="step-status-text warn">Buscando uploader…</p>
+        </div>
+        <footer class="step-actions">
+          <button id="btnRetryUploader" type="button" class="ghost small">Reintentar detección</button>
+        </footer>
+      </article>
+
+      <article id="upload-step-agent" class="step-card">
+        <header class="step-head">
+          <span class="step-index">2</span>
+          <div>
+            <h3>Conectar Arduino Cloud Agent</h3>
+            <p class="step-description">Conectá el Agent para listar puertos disponibles y mantener la conexión viva.</p>
+          </div>
+        </header>
+        <div class="step-body">
+          <span id="agentStatus" class="badge warn">Sin conexión</span>
+          <div class="step-buttons">
+            <button id="btnConnect" class="primary">Conectar Agent</button>
+            <button id="btnRefreshPorts" class="ghost">Actualizar puertos</button>
+          </div>
+        </div>
+      </article>
+
+      <article id="upload-step-upload" class="step-card">
+        <header class="step-head">
+          <span class="step-index">3</span>
+          <div>
+            <h3>Elegir placa y subir</h3>
+            <p class="step-description">Seleccioná el puerto y modelo antes de enviar tu sketch compilado.</p>
+          </div>
+        </header>
+        <div class="step-body">
+          <label class="field">
+            <span>Puerto</span>
+            <select id="portSelect"></select>
+          </label>
+          <label class="field">
+            <span>Modelo</span>
+            <select id="fqbnSelect">
+              <option value="arduino:avr:nano" selected>Arduino Nano (Optiboot)</option>
+              <option value="arduino:avr:nano:cpu=atmega328old">Arduino Nano (Bootloader viejo)</option>
+              <option value="arduino:avr:uno">Arduino UNO</option>
+            </select>
+          </label>
+          <button id="btnUploadCli" type="button" class="primary is-disabled" disabled>Subir programa</button>
+          <div id="uploadProgress" class="inline-progress hidden">
+            <progress id="uploadProgressBar" max="100" value="0"></progress>
+            <p id="uploadProgressText">Preparando…</p>
+          </div>
+        </div>
+      </article>
     </div>
 
-    <div class="row">
-      <input id="line" type="text" placeholder="Comando o texto a enviar..." style="min-width:260px" />
-      <button id="btnSend">Enviar</button>
-    </div>
-
-    <h3>Monitor serie</h3>
-    <div id="log"></div>
-
-    <!-- Panel opcional: subir .hex -->
-    <h3>Subir programa (.hex)</h3>
-    <div class="row">
-      <input type="file" id="hexFile" accept=".hex,.bin" />
-      <input type="text" id="fqbn" placeholder="FQBN (p.ej. arduino:avr:uno)" style="min-width:240px" />
-      <button id="btnUpload">Subir .hex</button>
-    </div>
-  </section>
-
-  <!-- Smartblock Uploader (CLI) panel) -->
-  <section id="uploader-panel">
-    <h2>Subir a placa (Smartblock Uploader)</h2>
-    <div class="row">
-      <small>Usará el <strong>Puerto</strong> seleccionado arriba.</small>
-    </div>
-    <div class="row">
-      <label for="fqbnSelect">Modelo:</label>
-      <select id="fqbnSelect">
-        <option value="arduino:avr:nano" selected>Arduino Nano (Optiboot)</option>
-        <option value="arduino:avr:nano:cpu=atmega328old">Arduino Nano (Old bootloader)</option>
-        <option value="arduino:avr:uno">Arduino UNO</option>
-      </select>
-      <span id="uploader-status" class="hidden">Uploader conectado</span>
-    </div>
-    <div class="row">
-      <button id="btnUploadCli" class="hidden">Subir (CLI)</button>
+    <div class="agent-log">
+      <h3>Actividad</h3>
+      <pre id="log"></pre>
     </div>
   </section>
 

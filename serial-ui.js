@@ -9,21 +9,10 @@
   // Elementos UI esperados
   const logEl        = $("log");
   const agentStatus  = $("agentStatus");
-  const portStatus   = $("portStatus");
   const portSelect   = $("portSelect");
 
   const btnConnect   = $("btnConnect");
-  const btnList      = $("btnList");
-  const btnOpen      = $("btnOpen");
-  const btnClose     = $("btnClose");
-  const btnSend      = $("btnSend");
-  const inputLine    = $("line");
-  const inputBaud    = $("baud");
-
-  // Opcional: upload .hex
-  const hexInput     = $("hexFile");
-  const fqbnInput    = $("fqbn");
-  const btnUpload    = $("btnUpload");
+  const btnRefresh   = $("btnRefreshPorts");
 
   let connected = false;
 
@@ -31,11 +20,18 @@
   // Helpers
   // ──────────────────────────────────────────────
   function log(line, cls = "") {
-    if (!logEl) { console.log("[LOG]", line); return; }
-    const div = document.createElement("div");
-    if (cls) div.className = cls;
-    div.textContent = line;
-    logEl.appendChild(div);
+    const timestamp = new Date().toLocaleTimeString();
+    const tag = cls ? `[${cls.toUpperCase()}] ` : "";
+    const text = `${timestamp} ${tag}${line}`;
+    if (!logEl) {
+      console.log("[LOG]", text);
+      return;
+    }
+    const prefix = logEl.textContent ? "\n" : "";
+    logEl.textContent = `${logEl.textContent || ""}${prefix}${text}`;
+    if (logEl.textContent.length > 8000) {
+      logEl.textContent = logEl.textContent.slice(-8000);
+    }
     logEl.scrollTop = logEl.scrollHeight;
   }
 
@@ -62,6 +58,12 @@
   return out;
 }
 
+  function setAgentStatus(text, tone = "warn") {
+    if (!agentStatus) return;
+    agentStatus.textContent = text;
+    agentStatus.className = `badge ${tone}`;
+  }
+
   // Rellena el <select> de puertos con tolerancia a formatos
   function populatePortsSelect(ports) {
     if (!portSelect) {
@@ -70,8 +72,18 @@
       return;
     }
 
+    const previous = (typeof window !== "undefined" && window.__SERIAL_SELECTED_PORT) || "";
     portSelect.innerHTML = "";
-    (ports || []).forEach((p) => {
+    const list = Array.isArray(ports) ? ports : [];
+    if (!list.length) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "Sin puertos detectados";
+      opt.disabled = true;
+      opt.selected = true;
+      portSelect.appendChild(opt);
+    }
+    list.forEach((p) => {
       let val = "", label = "";
       if (typeof p === "string") {
         val = label = p;
@@ -93,24 +105,21 @@
       }
     });
 
+    if (previous) {
+      portSelect.value = previous;
+    }
+    if (!portSelect.value && portSelect.options.length) {
+      portSelect.selectedIndex = list.length ? 0 : -1;
+    }
+    try {
+      window.__SERIAL_SELECTED_PORT = portSelect.value || "";
+    } catch (_err) {}
+
     const count = portSelect.options.length;
     log(`Puertos disponibles: ${count}`);
     if (!count) {
       log("No se encontraron puertos. Verifica conexión física y reinicia el Agent.", "warn");
     }
-  }
-
-  // Lee un archivo como Base64 (para upload .hex)
-  async function readFileAsBase64(file) {
-    return new Promise((res, rej) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const b64 = btoa(String.fromCharCode(...new Uint8Array(reader.result)));
-        res(b64);
-      };
-      reader.onerror = rej;
-      reader.readAsArrayBuffer(file);
-    });
   }
 
   // Desactiva Web Serial para evitar conflictos (solo usamos el Agent)
@@ -120,21 +129,31 @@
     };
   }
 
+  // Persistir selección de puerto
+  if (portSelect) {
+    portSelect.addEventListener("change", () => {
+      const value = portSelect.value || "";
+      try { window.__SERIAL_SELECTED_PORT = value; } catch (_e) {}
+      if (value) log(`Puerto activo: ${value}`, "ok");
+    });
+  }
+
   // ──────────────────────────────────────────────
   // Botones
   // ──────────────────────────────────────────────
-  btnConnect && btnConnect.addEventListener("click", async () => {
-    if (agentStatus) { agentStatus.textContent = "Conectando..."; agentStatus.className = "warn"; }
+  async function attemptAgentConnect(origin = "manual") {
+    if (connected) {
+      if (origin !== "auto") log("Agent ya conectado.", "warn");
+      return;
+    }
+    setAgentStatus("Conectando…", "warn");
     try {
       const info = await ArduinoAgent.connect();
       connected = true;
-      if (agentStatus) { agentStatus.textContent = `Conectado ✔ (v${info.version})`; agentStatus.className = "ok"; }
-      log(`Agent conectado (${info.version})`, "ok");
-
-      // Intento listar al conectar (WS): ambas variantes
+      setAgentStatus(`Conectado (v${info.version || "unknown"})`, "ok");
+      log(`Agent conectado (${info.version || "unknown"})`, origin === "auto" ? "" : "ok");
       try {
         if (ArduinoAgent.__emitCommand) {
-          console.log("[UI] enviando 'list' y 'serial list' por WS (auto)");
           ArduinoAgent.__emitCommand("list");
           ArduinoAgent.__emitCommand("serial list");
         } else {
@@ -144,21 +163,23 @@
         console.error("[UI] error al listar post-conexión", e);
       }
     } catch (e) {
-      if (agentStatus) { agentStatus.textContent = "No conectado"; agentStatus.className = "err"; }
+      setAgentStatus("Sin conexión", "err");
       log(`Error: ${e.message}`, "err");
+      throw e;
     }
+  }
+
+  btnConnect && btnConnect.addEventListener("click", () => {
+    attemptAgentConnect("manual").catch(() => {});
   });
 
-  btnList && btnList.addEventListener("click", async () => {
-    console.log("[UI] btnList clickeado");
-    log("Listando puertos...", "warn");
+  btnRefresh && btnRefresh.addEventListener("click", async () => {
+    log("Listando puertos…", "warn");
     try {
       if (ArduinoAgent.__emitCommand) {
-        console.log("[UI] enviando 'list' y 'serial list' por WS");
         ArduinoAgent.__emitCommand("list");
         ArduinoAgent.__emitCommand("serial list");
       } else {
-        console.log("[UI] usando ArduinoAgent.listPorts()");
         ArduinoAgent.listPorts();
       }
     } catch (e) {
@@ -167,46 +188,12 @@
     }
   });
 
-  btnOpen && btnOpen.addEventListener("click", () => {
-    const p = portSelect ? portSelect.value : "";
-    const b = Number((inputBaud && inputBaud.value) || 115200);
-    if (!p) return log("Elegí un puerto.", "warn");
-    try {
-      ArduinoAgent.openPort(p, b);
-      if (portStatus) { portStatus.textContent = `Abierto: ${p} @ ${b}`; portStatus.className = "ok"; }
-      log(`Puerto abierto: ${p} @ ${b}`, "ok");
-    } catch (e) {
-      log(`Error: ${e.message}`, "err");
-    }
-  });
-
-  btnClose && btnClose.addEventListener("click", () => {
-    try {
-      ArduinoAgent.closePort(portSelect ? portSelect.value : "");
-      if (portStatus) { portStatus.textContent = "Puerto cerrado"; portStatus.className = "warn"; }
-      log("Puerto cerrado.");
-    } catch (e) {
-      log(`Error: ${e.message}`, "err");
-    }
-  });
-
-  btnSend && btnSend.addEventListener("click", () => {
-    const line = (inputLine && inputLine.value) || "";
-    if (!line.trim()) return;
-    try {
-      // Algunos Agents esperan que el puerto ya esté abierto
-      ArduinoAgent.sendLine(line, portSelect ? portSelect.value : undefined);
-      log(`→ ${line}`);
-      if (inputLine) inputLine.value = "";
-    } catch (e) {
-      log(`Error: ${e.message}`, "err");
-    }
-  });
-
   // ──────────────────────────────────────────────
   // Eventos del Agent
   // ──────────────────────────────────────────────
   ArduinoAgent.on("agent:connect", (info) => {
+    connected = true;
+    setAgentStatus(`Conectado (ws ${info.endpoint || ""})`, "ok");
     log(`WS conectado: ${info.endpoint}`, "ok");
     // Auto-listar al conectar
     try {
@@ -224,10 +211,12 @@
   ArduinoAgent.on("agent:disconnect", () => {
     log("Desconectado del Agent.", "warn");
     connected = false;
+    setAgentStatus("Sin conexión", "warn");
   });
 
   ArduinoAgent.on("agent:error", (msg) => {
     log(`Agent error: ${msg}`, "err");
+    setAgentStatus("Error con el Agent", "err");
   });
 
   // Caso clásico / y tu build: recibimos lista via 'command'/'message'/'notification'
@@ -256,8 +245,14 @@
     log(`← ${clean}`);
   });
 
+  // Intento de conexión automática poco después de iniciar
+  setTimeout(() => {
+    attemptAgentConnect("auto").catch(() => {});
+  }, 600);
+
   // Exponer cierre seguro del puerto para que app.js pueda llamarlo antes del upload CLI
   window.SerialUI = window.SerialUI || {};
+  window.SerialUI.log = log;
   window.SerialUI.closeIfOpen = async function(portName){
     try{
       if (!portName) return;
@@ -271,30 +266,6 @@
       console.warn('[SerialUI.closeIfOpen]', e);
     }
   };
-
-  // ──────────────────────────────────────────────
-  // Upload .hex (opcional)
-  // ──────────────────────────────────────────────
-  if (btnUpload && hexInput && fqbnInput) {
-    btnUpload.addEventListener("click", async () => {
-      try {
-        const file = hexInput.files[0];
-        const fqbn = fqbnInput.value.trim();
-        const port = portSelect ? portSelect.value : "";
-        if (!file) return log("Elegí un archivo .hex.", "warn");
-        if (!fqbn) return log("Indicá FQBN (ej: arduino:avr:uno).", "warn");
-        if (!port) return log("Elegí un puerto.", "warn");
-
-        const base64 = await readFileAsBase64(file);
-        log("Subiendo firmware...", "warn");
-        const resp = await ArduinoAgent.uploadHex({ fqbn, port, base64, filename: file.name });
-        log(`Upload completado. Respuesta: ${JSON.stringify(resp)}`, "ok");
-      } catch (e) {
-        log(`Upload falló: ${e.message}`, "err");
-        log("Si ves 'signature required', tu Agent requiere firma → usar Agent 'open' o un bridge con arduino-cli.", "warn");
-      }
-    });
-  }
 
   // ──────────────────────────────────────────────
   // Autotest del selector (ejecutar en consola: __testPopulate())
