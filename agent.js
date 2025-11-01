@@ -113,6 +113,16 @@
             endpoint = ep;
             connected = true;
 
+            // Exponer el socket globalmente para otros módulos (serial-ui/app.js)
+            try { window.__AGENT_SOCKET = s; } catch (_e) {}
+
+            // Anunciar que el Agent está listo
+            emit("agent:ready", { endpoint: ep });
+
+            // Pedir lista de puertos apenas conecta (ambas variantes)
+            try { s.emit("command", "list"); } catch {}
+            try { s.emit("command", "serial list"); } catch {}
+
             // Listeners de canal "command"
             s.on("command", (msg) => {
               // Log de depuración útil
@@ -151,6 +161,7 @@
 
             s.on("disconnect", () => {
               connected = false;
+              try { window.__AGENT_SOCKET = null; } catch (_e) {}
               emit("agent:disconnect");
             });
 
@@ -261,5 +272,10 @@
 
     // subida de firmware
     uploadHex,
+
+    // estado/diagnóstico
+    isConnected: () => !!(socket && socket.connected),
+    getEndpoint: () => endpoint,
+    getVersion: () => lastInfo.version,
   };
 })();

@@ -147,6 +147,7 @@ function generateSketch() {
   if (out) out.textContent = final;
   return final;
 }
+try { window.generateSketch = generateSketch; } catch(_e){}
 
 function downloadINO(name, content) {
   const blob = new Blob([content], { type: 'text/plain' });
@@ -216,3 +217,80 @@ window.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => sendSerial('W 13 L'), 600);
   });
 });
+
+// ===== Smartblock Uploader (CLI) integration =====
+(function (){
+  const $ = (id) => document.getElementById(id);
+
+  async function detectUploader(){
+    try{
+      const r = await fetch('http://127.0.0.1:8999/', { cache: 'no-store' });
+      if(!r.ok) throw new Error('not ok');
+      // Mostrar controles de subida por CLI
+      $('#btnUploadCli') && $('#btnUploadCli').classList.remove('hidden');
+      $('#uploader-status') && $('#uploader-status').classList.remove('hidden');
+    }catch(e){
+      // Ocultar si el uploader no está
+      $('#btnUploadCli') && $('#btnUploadCli').classList.add('hidden');
+      $('#uploader-status') && $('#uploader-status').classList.add('hidden');
+    }
+  }
+
+  async function closePortIfNeeded(port){
+    try{
+      if (window.SerialUI && typeof window.SerialUI.closeIfOpen === 'function'){
+        await window.SerialUI.closeIfOpen(port);
+      } else if (window.ArduinoAgent && typeof window.ArduinoAgent.__emitCommand === 'function'){
+        window.ArduinoAgent.__emitCommand(`close ${port}`);
+      }
+    }catch(_e){}
+  }
+
+  async function doUploadCLI(){
+    const portSel = $('#portSelect');
+    const fqbnSel = $('#fqbnSelect');
+    const port = portSel ? (portSel.value || '').trim() : '';
+    const fqbn = fqbnSel ? (fqbnSel.value || 'arduino:avr:nano') : 'arduino:avr:nano';
+
+    if(!port){ alert('Elegí un puerto.'); return; }
+
+    let ino = '';
+    try{
+      if (typeof window.generateSketch === 'function'){ ino = window.generateSketch(); }
+    }catch(_e){}
+    if(!ino || typeof ino !== 'string'){
+      alert('No hay sketch para subir. Asegúrate de que generateSketch() devuelva el código.');
+      return;
+    }
+
+    await closePortIfNeeded(port);
+
+    try{
+      const resp = await fetch('http://127.0.0.1:8999/upload-ino', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ ino, port, fqbn })
+      });
+      const data = await resp.json();
+      console.log('[upload-ino]', data);
+      if(data.ok){
+        alert('✅ Subida OK');
+      }else{
+        alert('❌ Falló la subida. Revisá la consola para ver detalles.');
+      }
+    }catch(e){
+      console.error(e);
+      alert('No pude contactar al Uploader local. ¿Está abierto?');
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    detectUploader();
+    const btn = document.getElementById('btnUploadCli');
+    if (btn) btn.addEventListener('click', doUploadCLI);
+  });
+
+  // Reintentos de detección por si el usuario abre el Uploader luego
+  setTimeout(detectUploader, 2000);
+  setInterval(detectUploader, 15000);
+})();

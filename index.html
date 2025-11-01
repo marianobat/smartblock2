@@ -84,6 +84,10 @@
     .ok { color:#14803a; }
     .warn { color:#a15c00; }
     .err { color:#b00020; }
+    .hidden { display: none !important; }
+    #uploader-panel { margin: 16px 0; padding: 12px; border: 1px solid #e1e5ec; border-radius: 10px; }
+    #uploader-panel label { margin-right: 6px; }
+    #uploader-status { margin-left: 8px; font-weight: 600; }
   </style>
 
   <!-- Panel de control del Arduino Cloud Agent -->
@@ -118,6 +122,26 @@
       <input type="file" id="hexFile" accept=".hex,.bin" />
       <input type="text" id="fqbn" placeholder="FQBN (p.ej. arduino:avr:uno)" style="min-width:240px" />
       <button id="btnUpload">Subir .hex</button>
+    </div>
+  </section>
+
+  <!-- Smartblock Uploader (CLI) panel) -->
+  <section id="uploader-panel">
+    <h2>Subir a placa (Smartblock Uploader)</h2>
+    <div class="row">
+      <small>Usará el <strong>Puerto</strong> seleccionado arriba.</small>
+    </div>
+    <div class="row">
+      <label for="fqbnSelect">Modelo:</label>
+      <select id="fqbnSelect">
+        <option value="arduino:avr:nano" selected>Arduino Nano (Optiboot)</option>
+        <option value="arduino:avr:nano:cpu=atmega328old">Arduino Nano (Old bootloader)</option>
+        <option value="arduino:avr:uno">Arduino UNO</option>
+      </select>
+      <span id="uploader-status" class="hidden">Uploader conectado</span>
+    </div>
+    <div class="row">
+      <button id="btnUploadCli" class="hidden">Subir (CLI)</button>
     </div>
   </section>
 

@@ -237,22 +237,40 @@
   });
 
   ArduinoAgent.on("agent:message", (msg) => {
-  // Normaliza y muestra el crudo (para depurar)
-  const rawShown = (typeof msg === "string") ? msg : JSON.stringify(msg);
-  console.log("AGENT RAW (norm):", rawShown);
+    // Normaliza y muestra el crudo (para depurar)
+    const rawShown = (typeof msg === "string") ? msg : JSON.stringify(msg);
+    console.log("AGENT RAW (norm):", rawShown);
 
-  const ports = extractPortsFromMsg(msg);
-  if (ports.length) {
-    console.log("[WS] detecté puertos, actualizo selector");
-    populatePortsSelect(ports);
-  }
-});
+    const ports = extractPortsFromMsg(msg);
+    if (ports.length) {
+      // Guarda la última lista globalmente por si otra parte de la UI la necesita
+      try { window.__AGENT_LAST_PORTS = ports; } catch (_e) {}
+      console.log("[WS] detecté puertos, actualizo selector");
+      populatePortsSelect(ports);
+    }
+  });
 
   // Datos serie entrantes
   ArduinoAgent.on("serial:data", (text) => {
     const clean = String(text).replace(/\r?\n$/, "");
     log(`← ${clean}`);
   });
+
+  // Exponer cierre seguro del puerto para que app.js pueda llamarlo antes del upload CLI
+  window.SerialUI = window.SerialUI || {};
+  window.SerialUI.closeIfOpen = async function(portName){
+    try{
+      if (!portName) return;
+      if (window.ArduinoAgent && typeof window.ArduinoAgent.__emitCommand === 'function'){
+        // consulta estado (no bloqueante) y luego intenta cerrar
+        window.ArduinoAgent.__emitCommand('list');
+        await new Promise(r => setTimeout(r, 150));
+        window.ArduinoAgent.__emitCommand(`close ${portName}`);
+      }
+    }catch(e){
+      console.warn('[SerialUI.closeIfOpen]', e);
+    }
+  };
 
   // ──────────────────────────────────────────────
   // Upload .hex (opcional)
