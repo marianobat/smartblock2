@@ -223,14 +223,29 @@ window.addEventListener('DOMContentLoaded', () => {
   const $ = (id) => document.getElementById(id);
 
   async function detectUploader(){
-    try{
-      const r = await fetch('http://127.0.0.1:8999/', { cache: 'no-store' });
-      if(!r.ok) throw new Error('not ok');
-      // Mostrar controles de subida por CLI
+    const endpoints = [
+      'http://127.0.0.1:8999/',
+      'http://localhost:8999/'
+    ];
+    let response = null;
+    for (const url of endpoints) {
+      try {
+        response = await fetch(url, { cache: 'no-store' });
+        if (response) break;
+      } catch (_e) {
+        // sigue con el siguiente endpoint
+      }
+    }
+
+    if (response) {
+      const statusEl = $('#uploader-status');
+      if (statusEl) {
+        const statusText = response.ok ? 'Uploader conectado' : `Uploader detectado (HTTP ${response.status})`;
+        statusEl.textContent = statusText;
+      }
       $('#btnUploadCli') && $('#btnUploadCli').classList.remove('hidden');
       $('#uploader-status') && $('#uploader-status').classList.remove('hidden');
-    }catch(e){
-      // Ocultar si el uploader no está
+    } else {
       $('#btnUploadCli') && $('#btnUploadCli').classList.add('hidden');
       $('#uploader-status') && $('#uploader-status').classList.add('hidden');
     }
