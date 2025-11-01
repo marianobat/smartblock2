@@ -229,18 +229,30 @@ window.addEventListener('DOMContentLoaded', () => {
     ];
     let response = null;
     for (const url of endpoints) {
+      const commonInit = { cache: 'no-store' };
       try {
-        response = await fetch(url, { cache: 'no-store' });
+        response = await fetch(url, commonInit);
         if (response) break;
       } catch (_e) {
-        // sigue con el siguiente endpoint
+        // Si el uploader no habilita CORS, probamos modo no-cors (opaque)
+        try {
+          response = await fetch(url, { ...commonInit, mode: 'no-cors' });
+          if (response) break;
+        } catch (_ignored) {
+          // sigue con el siguiente endpoint
+        }
       }
     }
 
     if (response) {
       const statusEl = $('#uploader-status');
       if (statusEl) {
-        const statusText = response.ok ? 'Uploader conectado' : `Uploader detectado (HTTP ${response.status})`;
+        let statusText = 'Uploader conectado';
+        if (response.type === 'opaque') {
+          statusText = 'Uploader detectado (sin CORS)';
+        } else if (!response.ok) {
+          statusText = `Uploader detectado (HTTP ${response.status})`;
+        }
         statusEl.textContent = statusText;
       }
       $('#btnUploadCli') && $('#btnUploadCli').classList.remove('hidden');
